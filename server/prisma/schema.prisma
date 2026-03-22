@@ -1,0 +1,378 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============= ENUMS =============
+
+enum AppRole {
+  super_admin
+  admin
+  content_manager
+  support_agent
+  marketing_manager
+
+  @@map("app_role")
+}
+
+enum PostStatus {
+  draft
+  scheduled
+  published
+  archived
+
+  @@map("post_status")
+}
+
+enum LeadStatus {
+  new
+  contacted
+  qualified
+  proposal
+  won
+  lost
+
+  @@map("lead_status")
+}
+
+enum ChatStatus {
+  open
+  assigned
+  resolved
+  closed
+
+  @@map("chat_status")
+}
+
+// ============= MODELS =============
+
+model UserRole {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  role      AppRole  @default(content_manager)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
+  @@map("user_roles")
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  profile Profile?
+  roles   UserRole[]
+
+  @@map("users")
+}
+
+model Profile {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @unique @map("user_id") @db.Uuid
+  displayName String?  @map("display_name")
+  avatarUrl   String?  @map("avatar_url")
+  bio         String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+model Service {
+  id                String   @id @default(uuid()) @db.Uuid
+  categorySlug      String   @map("category_slug")
+  categoryName      String   @map("category_name")
+  slug              String   @unique
+  title             String
+  tagline           String?
+  description       String?
+  content           Json?    @default("{}")
+  icon              String?
+  features          Json?    @default("[]")
+  benefits          Json?    @default("[]")
+  processSteps      Json?    @default("[]") @map("process_steps")
+  technologies      Json?    @default("[]")
+  faqs              Json?    @default("[]")
+  seoTitle          String?  @map("seo_title")
+  seoDescription    String?  @map("seo_description")
+  seoKeywords       String[] @map("seo_keywords")
+  schemaMarkup      Json?    @map("schema_markup")
+  sortOrder         Int?     @default(0) @map("sort_order")
+  isPublished       Boolean  @default(true) @map("is_published")
+  heroSubtitle      String?  @map("hero_subtitle")
+  longOverview      String?  @map("long_overview")
+  serviceInclusions Json?    @default("[]") @map("service_inclusions")
+  industryUseCases  Json?    @default("[]") @map("industry_use_cases")
+  comparisonPoints  Json?    @default("[]") @map("comparison_points")
+  relatedBlogs      Json?    @default("[]") @map("related_blogs")
+  relatedServices   Json?    @default("[]") @map("related_services")
+  relatedCaseStudies Json?   @default("[]") @map("related_case_studies")
+  relatedProducts   Json?    @default("[]") @map("related_products")
+  ctaHeading        String?  @map("cta_heading")
+  ctaText           String?  @map("cta_text")
+  ogImage           String?  @map("og_image")
+  canonicalUrl      String?  @map("canonical_url")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@map("services")
+}
+
+model Product {
+  id             String   @id @default(uuid()) @db.Uuid
+  slug           String   @unique
+  name           String
+  tagline        String?
+  description    String?
+  externalUrl    String?  @map("external_url")
+  features       Json?    @default("[]")
+  benefits       Json?    @default("[]")
+  pricing        Json?
+  color          String?
+  logoUrl        String?  @map("logo_url")
+  screenshots    Json?    @default("[]")
+  seoTitle       String?  @map("seo_title")
+  seoDescription String?  @map("seo_description")
+  schemaMarkup   Json?    @map("schema_markup")
+  sortOrder      Int?     @default(0) @map("sort_order")
+  isPublished    Boolean  @default(true) @map("is_published")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@map("products")
+}
+
+model BlogCategory {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  slug      String   @unique
+  description String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  blogPosts BlogPost[]
+
+  @@map("blog_categories")
+}
+
+model BlogPost {
+  id               String   @id @default(uuid()) @db.Uuid
+  slug             String   @unique
+  title            String
+  excerpt          String?
+  content          String?
+  featuredImage    String?  @map("featured_image")
+  categoryId       String?  @map("category_id") @db.Uuid
+  authorId         String?  @map("author_id") @db.Uuid
+  tags             String[]
+  status           PostStatus @default(draft)
+  publishedAt      DateTime? @map("published_at") @db.Timestamptz()
+  scheduledAt      DateTime? @map("scheduled_at") @db.Timestamptz()
+  readTimeMinutes  Int?     @map("read_time_minutes")
+  seoTitle         String?  @map("seo_title")
+  seoDescription   String?  @map("seo_description")
+  ogImage          String?  @map("og_image")
+  schemaMarkup     Json?    @map("schema_markup")
+  viewCount        Int?     @default(0) @map("view_count")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  category BlogCategory? @relation(fields: [categoryId], references: [id])
+
+  @@index([status])
+  @@index([categoryId])
+  @@index([publishedAt])
+  @@map("blog_posts")
+}
+
+model CaseStudy {
+  id             String   @id @default(uuid()) @db.Uuid
+  slug           String   @unique
+  title          String
+  clientIndustry String?  @map("client_industry")
+  problem        String?
+  solution       String?
+  content        String?
+  technologies   Json?    @default("[]")
+  results        Json?    @default("[]")
+  images         Json?    @default("[]")
+  featuredImage  String?  @map("featured_image")
+  isPublished    Boolean  @default(true) @map("is_published")
+  seoTitle       String?  @map("seo_title")
+  seoDescription String?  @map("seo_description")
+  sortOrder      Int?     @default(0) @map("sort_order")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@map("case_studies")
+}
+
+model Career {
+  id               String   @id @default(uuid()) @db.Uuid
+  title            String
+  department       String?
+  location         String?
+  employmentType   String?  @default("full-time") @map("employment_type")
+  experienceLevel  String?  @map("experience_level")
+  summary          String?
+  description      String?
+  responsibilities Json?    @default("[]")
+  requirements     Json?    @default("[]")
+  benefits         Json?    @default("[]")
+  applyEmail       String?  @map("apply_email")
+  applyLink        String?  @map("apply_link")
+  isPublished      Boolean  @default(false) @map("is_published")
+  sortOrder        Int?     @default(0) @map("sort_order")
+  slug             String   @unique
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@map("careers")
+}
+
+model Testimonial {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  role        String?
+  company     String?
+  content     String
+  avatarUrl   String?  @map("avatar_url")
+  rating      Int?     @db.SmallInt
+  isFeatured  Boolean  @default(false) @map("is_featured")
+  isPublished Boolean  @default(true) @map("is_published")
+  sortOrder   Int?     @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@map("testimonials")
+}
+
+model Gallery {
+  id          String   @id @default(uuid()) @db.Uuid
+  title       String?
+  description String?
+  fileUrl     String   @map("file_url")
+  fileType    String?  @map("file_type")
+  category    String?
+  altText     String?  @map("alt_text")
+  isPublished Boolean  @default(true) @map("is_published")
+  sortOrder   Int?     @default(0) @map("sort_order")
+  uploadedBy  String?  @map("uploaded_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@map("gallery")
+}
+
+model Lead {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  email       String
+  phone       String?
+  company     String?
+  interest    String?
+  message     String?
+  formType    String   @default("contact") @map("form_type")
+  sourcePage  String?  @map("source_page")
+  status      LeadStatus @default(new)
+  assignedTo  String?  @map("assigned_to") @db.Uuid
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("leads")
+}
+
+model PageView {
+  id         String   @id @default(uuid()) @db.Uuid
+  sessionId  String?  @map("session_id")
+  pagePath   String   @map("page_path")
+  referrer   String?
+  userAgent  String?  @map("user_agent")
+  ipHash     String?  @map("ip_hash")
+  country    String?
+  deviceType String?  @map("device_type")
+  durationSeconds Int? @map("duration_seconds")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@index([createdAt])
+  @@index([pagePath])
+  @@index([sessionId])
+  @@map("page_views")
+}
+
+model ChatConversation {
+  id             String   @id @default(uuid()) @db.Uuid
+  visitorName    String?  @map("visitor_name")
+  visitorEmail   String?  @map("visitor_email")
+  status         ChatStatus @default(open)
+  assignedAgent  String?  @map("assigned_agent") @db.Uuid
+  sessionId      String?  @map("session_id")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  messages ChatMessage[]
+
+  @@map("chat_conversations")
+}
+
+model ChatMessage {
+  id             String   @id @default(uuid()) @db.Uuid
+  conversationId String   @map("conversation_id") @db.Uuid
+  senderType     String   // 'visitor', 'ai', 'agent'
+  senderId       String?  @map("sender_id") @db.Uuid
+  content        String
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@map("chat_messages")
+}
+
+model PageSeo {
+  id          String   @id @default(uuid()) @db.Uuid
+  pagePath    String   @unique @map("page_path")
+  title       String?
+  description String?
+  ogImage     String?  @map("og_image")
+  schemaMarkup Json?   @map("schema_markup")
+  canonicalUrl String? @map("canonical_url")
+  noIndex     Boolean  @default(false) @map("no_index")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@map("page_seo")
+}
+
+model SiteSetting {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique
+  value     Json     @default("{}")
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@map("site_settings")
+}
+
+model RateLimitEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  bucket    String
+  key       String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@index([bucket, key, createdAt])
+  @@map("rate_limit_events")
+}
