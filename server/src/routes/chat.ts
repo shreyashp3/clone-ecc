@@ -1,30 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../index.js';
 import crypto from 'crypto';
-import axios from 'axios';
-import { authMiddleware, staffMiddleware, verifyJWT } from '../utils/auth.js';
+import { authMiddleware, staffMiddleware } from '../utils/auth.js';
 
 const router = Router();
-
-const SYSTEM_PROMPT = `You are ECC Technologies' AI assistant. You help visitors learn about ECC Technologies' cloud services, DevOps consulting, AI solutions, and products.
-
-Key information:
-- ECC Technologies is an AWS Advanced Partner specializing in cloud migration, DevOps, and AI
-- Services: AWS Cloud Services, Azure Cloud Services, DevOps Consulting, AI & Automation, Managed IT Services
-- Products: AI Cloud Insights (cloud cost optimization), GPU on Cloud (GPU infrastructure), Ticketly Support (IT helpdesk)
-- Contact: info@ecctechnologies.ai
-
-Be helpful, professional, and concise. If someone has a complex technical question or wants to discuss a project, suggest they book a free assessment at /contact. If someone asks to speak to a human, let them know an agent will be connected.
-
-Keep responses under 150 words unless detailed explanation is needed.`;
-
-const ADMIN_SYSTEM_PROMPT = `You are assisting ECC Technologies support staff. Draft a concise, professional reply to the visitor based on the conversation history.
-
-Rules:
-- Do not invent completed actions, pricing, or commitments.
-- If more investigation is needed, say so clearly.
-- Keep the tone human, direct, and helpful.
-- Keep the response under 120 words unless more detail is necessary.`;
 
 type SenderType = 'visitor' | 'ai' | 'agent' | string;
 
@@ -33,33 +12,25 @@ interface ChatRequestBody {
   conversation_id?: string;
   message?: string;
   session_id?: string;
-  visitor_message?: string;
   visitor_name?: string;
   visitor_email?: string | null;
 }
 
 interface StoredMessage {
-  id?: string;
+  id: string;
   content: string;
-  sender_type?: SenderType;
   senderType?: SenderType;
-  created_at?: string;
+  sender_type?: SenderType;
   createdAt?: Date;
+  created_at?: string;
 }
 
-interface GatewayMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-}
-
-interface GatewayResponse {
-  choices?: Array<{
-    message?: {
-      content?: string;
-    };
-  }>;
-  error?: {
-    message?: string;
+function formatMessage(message: StoredMessage) {
+  return {
+    id: message.id,
+    content: message.content,
+    sender_type: message.senderType ?? message.sender_type,
+    created_at: message.createdAt ?? message.created_at
   };
 }
 
@@ -112,68 +83,99 @@ async function checkRateLimit(
   return false;
 }
 
-function getFallbackReply(message?: string) {
-  const lowerMessage = message?.toLowerCase() ?? '';
+const HUMAN_PHRASES = [
+  'human',
+  'agent',
+  'real person',
+  'someone from your team',
+  'talk to agent',
+  'speak to a human',
+  'speak to someone'
+];
 
-  if (
-    ['human', 'agent', 'real person', 'someone from your team'].some((phrase) =>
-      lowerMessage.includes(phrase)
-    )
-  ) {
-    return "I've shared your request with our team. A human agent will follow up shortly.";
-  }
+const PRODUCT_KEYWORDS = ['product', 'platform', 'saas', 'ai cloud insights', 'gpu', 'ticketly'];
+const SERVICE_KEYWORDS = ['service', 'services', 'consulting', 'aws', 'azure', 'devops', 'managed', 'cloud'];
+const PRICING_KEYWORDS = ['price', 'pricing', 'cost', 'budget', 'quote'];
+const DEMO_KEYWORDS = ['demo', 'meeting', 'call', 'schedule'];
+const CASE_STUDY_KEYWORDS = ['case study', 'case studies', 'success story', 'client story'];
+const CAREER_KEYWORDS = ['career', 'job', 'hiring', 'apply', 'opening'];
+const SUPPORT_KEYWORDS = ['support', 'help', 'issue', 'ticket'];
 
-  return 'Thanks for your message. Our team is reviewing it and will follow up shortly. You can also reach us at info@ecctechnologies.ai.';
+function containsAny(text: string, keywords: string[]) {
+  return keywords.some((k) => text.includes(k));
 }
 
-function mapHistoryToGatewayMessages(history: StoredMessage[]) {
-  return history.map((entry) => ({
-    role: (entry.sender_type || entry.senderType) === 'visitor' ? 'user' : 'assistant',
-    content: entry.content
-  })) satisfies GatewayMessage[];
-}
+function buildAssistantReply(message?: string) {
+  const text = (message || '').toLowerCase();
 
-function formatMessage(message: any) {
-  return {
-    id: message.id,
-    content: message.content,
-    sender_type: message.senderType ?? message.sender_type,
-    created_at: message.createdAt ?? message.created_at
-  };
-}
+  const wantsProducts = containsAny(text, PRODUCT_KEYWORDS);
+  const wantsServices = containsAny(text, SERVICE_KEYWORDS);
+  const wantsPricing = containsAny(text, PRICING_KEYWORDS);
+  const wantsDemo = containsAny(text, DEMO_KEYWORDS);
+  const wantsCaseStudies = containsAny(text, CASE_STUDY_KEYWORDS);
+  const wantsCareers = containsAny(text, CAREER_KEYWORDS);
+  const wantsSupport = containsAny(text, SUPPORT_KEYWORDS);
 
-async function generateGatewayReply(
-  apiKey: string | undefined,
-  messages: GatewayMessage[],
-  fallbackReply: string
-) {
-  if (!apiKey) {
-    return fallbackReply;
+  const wantsSpecific =
+    wantsProducts || wantsServices || wantsPricing || wantsDemo || wantsCaseStudies || wantsCareers || wantsSupport;
+
+  const lines: string[] = [];
+
+  lines.push("Hi there! I'm ECC's virtual assistant.");
+
+  if (!wantsSpecific) {
+    lines.push('ECC Technologies is an AWS Advanced Partner specializing in cloud migration, DevOps, and AI.');
+    lines.push('Services: AWS Cloud Services, Azure Cloud Services, DevOps Consulting, AI & Automation, Managed IT Services.');
+    lines.push('Products: AI Cloud Insights (cloud cost optimization), GPU on Cloud (GPU infrastructure), Ticketly Support (IT helpdesk).');
+  } else {
+    if (wantsServices) {
+      lines.push('Services: AWS Cloud Services, Azure Cloud Services, DevOps Consulting, AI & Automation, Managed IT Services.');
+    }
+    if (wantsProducts) {
+      lines.push('Products: AI Cloud Insights (cloud cost optimization), GPU on Cloud (GPU infrastructure), Ticketly Support (IT helpdesk).');
+    }
   }
 
-  try {
-    const response = await axios.post(
-      'https://ai.gateway.lovable.dev/v1/chat/completions',
-      {
-        model: 'google/gemini-3-flash-preview',
-        messages,
-        max_tokens: 500,
-        temperature: 0.7
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    const aiData = response.data as GatewayResponse;
-    return aiData.choices?.[0]?.message?.content?.trim() || fallbackReply;
-  } catch (error) {
-    console.error('AI gateway request error:', error);
-    return fallbackReply;
+  if (wantsPricing) {
+    lines.push('Pricing depends on scope and usage. We can provide a tailored quote once we understand your requirements.');
   }
+
+  if (wantsDemo) {
+    lines.push('We can schedule a product demo. Share your preferred time and contact email.');
+  }
+
+  if (wantsCaseStudies) {
+    lines.push('We can share relevant case studies based on your industry and goals.');
+  }
+
+  if (wantsCareers) {
+    lines.push('For careers, please visit /careers or email info@ecctechnologies.ai.');
+  }
+
+  if (wantsSupport) {
+    lines.push('For support, please describe the issue and urgency and we will route it to the right team.');
+  }
+
+  lines.push('For a deeper discussion, book a free assessment at /contact or email info@ecctechnologies.ai.');
+  lines.push('How can I help next?');
+
+  return lines.join(' ');
+}
+
+function buildAdminReply(message?: string) {
+  const text = (message || '').toLowerCase();
+  const wantsPricing = containsAny(text, PRICING_KEYWORDS);
+  const wantsDemo = containsAny(text, DEMO_KEYWORDS);
+
+  if (wantsPricing) {
+    return 'Thanks for reaching out. We can provide pricing once we understand scope, usage, and timeline. Please share requirements and we will follow up.';
+  }
+
+  if (wantsDemo) {
+    return 'Thanks for your interest. Please share your preferred time and contact details, and we will schedule a demo.';
+  }
+
+  return 'Thanks for your message. We are reviewing it and will follow up shortly. If needed, share more details to help us respond faster.';
 }
 
 async function verifyOwnership(conversationId: string, visitorSessionId: string) {
@@ -189,39 +191,13 @@ async function verifyOwnership(conversationId: string, visitorSessionId: string)
 }
 
 async function insertAiMessage(conversationId: string, content: string) {
-  const msg = await prisma.chatMessage.create({
+  return prisma.chatMessage.create({
     data: {
       conversationId,
       senderType: 'ai',
       content
     }
   });
-
-  return msg;
-}
-
-async function requireStaff(req: Request, res: Response) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return false;
-  }
-
-  const token = authHeader.substring(7);
-  const payload = verifyJWT(token);
-
-  if (!payload) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return false;
-  }
-
-  if (!payload.role) {
-    res.status(403).json({ error: 'Forbidden' });
-    return false;
-  }
-
-  (req as any).user = payload;
-  return true;
 }
 
 // POST /api/chat - Start or continue chat
@@ -230,10 +206,7 @@ router.post('/', async (req: Request, res: Response) => {
     const body = req.body as ChatRequestBody;
     const { action, conversation_id, session_id } = body;
     const message = body.message?.trim();
-    const legacyAdminRequest = typeof body.visitor_message === 'string' && !session_id;
-    const ipKey = hashKey(`chat:${getClientIp(req)}`);
 
-    // Start a new chat conversation (creates conversation + welcome message)
     if (action === 'start_chat') {
       const visitorName = body.visitor_name?.trim();
       const visitorEmail = body.visitor_email?.trim() || null;
@@ -256,32 +229,20 @@ router.post('/', async (req: Request, res: Response) => {
       });
 
       const welcomeContent =
-        "Hi there! I'm ECC's AI assistant. I can help with cloud services, DevOps consulting, AI solutions, and products. How can I help you today?";
+        "Hi there! I'm ECC's virtual assistant. I can help with cloud services, DevOps consulting, AI solutions, and products. How can I help you today?";
 
-      let welcomeMsg = null;
-      try {
-        welcomeMsg = await prisma.chatMessage.create({
-          data: {
-            conversationId: newConversationId,
-            content: welcomeContent,
-            senderType: 'ai'
-          }
-        });
-      } catch (error) {
-        console.error('Failed to insert welcome message:', error);
-      }
+      const welcomeMsg = await prisma.chatMessage.create({
+        data: {
+          conversationId: newConversationId,
+          content: welcomeContent,
+          senderType: 'ai'
+        }
+      });
 
       res.json({
         success: true,
         conversation_id: newConversationId,
-        welcome_message: welcomeMsg
-          ? formatMessage(welcomeMsg)
-          : {
-              id: crypto.randomUUID(),
-              content: welcomeContent,
-              sender_type: 'ai',
-              created_at: new Date().toISOString()
-            }
+        welcome_message: formatMessage(welcomeMsg)
       });
       return;
     }
@@ -314,56 +275,6 @@ router.post('/', async (req: Request, res: Response) => {
       return;
     }
 
-    if (action === 'generate_admin_reply' || legacyAdminRequest) {
-      if (!conversation_id) {
-        res.status(400).json({ error: 'Missing conversation_id' });
-        return;
-      }
-
-      if (!(await requireStaff(req, res))) {
-        return;
-      }
-
-      const history = await prisma.chatMessage.findMany({
-        where: { conversationId: conversation_id },
-        orderBy: { createdAt: 'asc' },
-        take: 20
-      });
-
-      if (!history || history.length === 0) {
-        res.status(400).json({ error: 'No messages available for this conversation' });
-        return;
-      }
-
-      const fallbackReply = getFallbackReply();
-      const reply = await generateGatewayReply(
-        process.env.LOVABLE_API_KEY,
-        [
-          { role: 'system', content: ADMIN_SYSTEM_PROMPT },
-          ...mapHistoryToGatewayMessages(history),
-          {
-            role: 'user',
-            content: 'Draft the next ECC reply to the visitor based on the conversation above.'
-          }
-        ],
-        fallbackReply
-      );
-
-      const replyMessage = await insertAiMessage(conversation_id, reply);
-
-      await prisma.chatConversation.updateMany({
-        where: { id: conversation_id, status: 'open' },
-        data: { status: 'assigned' }
-      });
-
-      res.json({
-        success: true,
-        reply,
-        reply_message: formatMessage(replyMessage)
-      });
-      return;
-    }
-
     if (!conversation_id || !message || !session_id) {
       res.status(400).json({ error: 'Missing required fields' });
       return;
@@ -380,6 +291,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const sessionKey = hashKey(`chat_msg:${session_id}`);
+    const ipKey = hashKey(`chat:${getClientIp(req)}`);
     const limitedBySession = await checkRateLimit('chat_message_session', sessionKey, 12, 60);
     const limitedByIp = await checkRateLimit('chat_message_ip', ipKey, 60, 3600);
     if (limitedBySession || limitedByIp) {
@@ -396,13 +308,7 @@ router.post('/', async (req: Request, res: Response) => {
     });
 
     const lowerMessage = message.toLowerCase();
-    const wantsHuman = [
-      'speak to a human',
-      'talk to agent',
-      'human agent',
-      'real person',
-      'speak to someone'
-    ].some((phrase) => lowerMessage.includes(phrase));
+    const wantsHuman = HUMAN_PHRASES.some((phrase) => lowerMessage.includes(phrase));
 
     if (wantsHuman) {
       await prisma.chatConversation.update({
@@ -424,30 +330,17 @@ router.post('/', async (req: Request, res: Response) => {
       return;
     }
 
-    const history = await prisma.chatMessage.findMany({
-      where: { conversationId: conversation_id },
-      orderBy: { createdAt: 'asc' },
-      take: 20
-    });
-
-    const fallbackReply = getFallbackReply(message);
-    const reply = await generateGatewayReply(
-      process.env.LOVABLE_API_KEY,
-      [{ role: 'system', content: SYSTEM_PROMPT }, ...mapHistoryToGatewayMessages(history || [])],
-      fallbackReply
-    );
-
-    const replyMessage = await insertAiMessage(conversation_id, reply);
+    const replyContent = buildAssistantReply(message);
+    const replyMessage = await insertAiMessage(conversation_id, replyContent);
 
     res.json({
       success: true,
-      reply,
       visitor_message: formatMessage(visitorMsg),
       reply_message: formatMessage(replyMessage)
     });
   } catch (error) {
-    console.error('Chat AI error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Chat error:', error);
+    res.status(500).json({ error: 'Chat operation failed' });
   }
 });
 
@@ -504,7 +397,7 @@ router.post('/messages', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/chat/ai-reply - Generate AI reply
+// POST /api/chat/ai-reply - Generate deterministic reply
 router.post('/ai-reply', async (req: Request, res: Response) => {
   try {
     const { conversationId } = req.body;
@@ -513,32 +406,13 @@ router.post('/ai-reply', async (req: Request, res: Response) => {
       return;
     }
 
-    const history = await prisma.chatMessage.findMany({
-      where: { conversationId },
-      orderBy: { createdAt: 'asc' },
-      take: 20
+    const lastVisitor = await prisma.chatMessage.findFirst({
+      where: { conversationId, senderType: 'visitor' },
+      orderBy: { createdAt: 'desc' }
     });
 
-    if (!history || history.length === 0) {
-      res.status(400).json({ error: 'No messages available for this conversation' });
-      return;
-    }
-
-    const fallbackReply = getFallbackReply();
-    const reply = await generateGatewayReply(
-      process.env.LOVABLE_API_KEY,
-      [
-        { role: 'system', content: ADMIN_SYSTEM_PROMPT },
-        ...mapHistoryToGatewayMessages(history),
-        {
-          role: 'user',
-          content: 'Draft the next ECC reply to the visitor based on the conversation above.'
-        }
-      ],
-      fallbackReply
-    );
-
-    const replyMessage = await insertAiMessage(conversationId, reply);
+    const replyContent = buildAdminReply(lastVisitor?.content);
+    const replyMessage = await insertAiMessage(conversationId, replyContent);
 
     await prisma.chatConversation.updateMany({
       where: { id: conversationId, status: 'open' },
@@ -548,7 +422,7 @@ router.post('/ai-reply', async (req: Request, res: Response) => {
     res.status(201).json({ reply_message: formatMessage(replyMessage) });
   } catch (error) {
     console.error('AI reply error:', error);
-    res.status(500).json({ error: 'Failed to generate AI response' });
+    res.status(500).json({ error: 'Failed to generate response' });
   }
 });
 
