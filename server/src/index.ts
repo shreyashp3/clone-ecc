@@ -22,6 +22,7 @@ export const prisma = new PrismaClient();
 // Initialize Express
 const app: Express = express();
 const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '0.0.0.0';
 
 // Middleware
 const envOrigins = (process.env.FRONTEND_URL || '')
@@ -144,8 +145,8 @@ const startServer = async () => {
       // Don't fail the server startup if test user can't be created
     }
 
-    app.listen(PORT, () => {
-      console.log(`✓ Server running on port ${PORT}`);
+    app.listen(Number(PORT), HOST, () => {
+      console.log(`Server running on ${HOST}:${PORT}`);
       console.log(`✓ API available at http://localhost:${PORT}`);
     });
   } catch (error) {
@@ -168,3 +169,5 @@ process.on('SIGINT', async () => {
   await prisma.$disconnect();
   process.exit(0);
 });
+
+
