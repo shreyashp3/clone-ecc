@@ -30,7 +30,7 @@ The complete migration from Supabase to PostgreSQL + Node.js backend has been su
 ### **Frontend Files**
 
 #### ✅ Created:
-1. **[src/integrations/api/client.ts](../enterprise-essence-hub/src/integrations/api/client.ts)** (560 lines)
+1. **[enterprise-essence-hub/src/integrations/api/client.ts](../enterprise-essence-hub/src/integrations/api/client.ts)** (560 lines)
    - Complete REST API client replacing Supabase SDK
    - Modules: `auth`, `leads`, `cms`, `chat`, `analytics`
    - Token management with localStorage persistence
@@ -311,7 +311,7 @@ Response: ✅
 
 ### **API Client Integration Points**
 
-The new `/src/integrations/api/client.ts` is properly imported in:
+The new `/enterprise-essence-hub/src/integrations/api/client.ts` is properly imported in:
 - ✅ `submitLead.ts` - for contact forms
 - ✅ `useAuth.tsx` - for authentication
 - ✅ Admin pages (ready for migration from Supabase)
@@ -548,7 +548,7 @@ The system is ready for:
 
 ## 📞 SUPPORT CONTACTS
 
-- **Backend API Docs**: See `/src/integrations/api/client.ts`
+- **Backend API Docs**: See `/enterprise-essence-hub/src/integrations/api/client.ts`
 - **Database Schema**: See `/server/schema.sql`
 - **Deployment Guides**: See `MIGRATION_GUIDE.md`
 

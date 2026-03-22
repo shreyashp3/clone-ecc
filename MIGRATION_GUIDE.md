@@ -145,7 +145,7 @@ npm run dev
 ### Step 1: Replace Supabase Client
 
 **Old:** `src/integrations/supabase/client.ts`
-**New:** `src/integrations/api/client.ts`
+**New:** `enterprise-essence-hub/src/integrations/api/client.ts`
 
 Update file to use fetch instead of Supabase SDK:
 ```typescript
@@ -338,7 +338,7 @@ sudo certbot --nginx -d your-domain.com -d www.your-domain.com
 1. ✅ `migration_schema.sql` - PostgreSQL schema
 2. ✅ `prisma/schema.prisma` - Prisma ORM definition
 3. ✅ `server/src/` - Complete Express API
-4. ✅ `src/integrations/api/` - New API client
+4. ✅ `enterprise-essence-hub/src/integrations/api/` - New API client
 5. ✅ `src/hooks/useAuth.tsx` - Updated auth hook
 6. ✅ `src/hooks/useCMSData.ts` - Updated CMS data hook
 7. ✅ `README-DEPLOYMENT.md` - Deployment instructions

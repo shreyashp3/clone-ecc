@@ -56,18 +56,17 @@ router.post('/', async (req: Request, res: Response) => {
     const clientIp = getClientIp(req);
     const ipHash = hashIp(clientIp);
 
-    // Rate limiting: 5 messages per 10 minutes (600 seconds) per IP
-    const canChat = await checkRateLimit('chat', ipHash, 5, 600);
-
-    if (!canChat) {
-      res.status(429).json({
-        error: 'Too many messages. Please try again later.',
-        retryAfter: 600
-      });
-      return;
-    }
-
     if (action === 'start_chat') {
+      // Rate limiting: 5 chat starts per 10 minutes per IP
+      const canStart = await checkRateLimit('chat_start', ipHash, 5, 600);
+      if (!canStart) {
+        res.status(429).json({
+          error: 'Too many chat sessions started. Please try again later.',
+          retryAfter: 600
+        });
+        return;
+      }
+
       // Start new conversation
       const newSession = session_id || `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -89,7 +88,7 @@ router.post('/', async (req: Request, res: Response) => {
       });
 
       // Record rate limit event
-      await recordRateLimitEvent('chat', ipHash);
+      await recordRateLimitEvent('chat_start', ipHash);
 
       res.json({
         success: true,
@@ -99,6 +98,16 @@ router.post('/', async (req: Request, res: Response) => {
         welcome_message: welcomeMessage
       });
     } else if (action === 'send_message') {
+      // Rate limiting: 30 messages per 10 minutes per IP
+      const canSend = await checkRateLimit('chat_message', ipHash, 30, 600);
+      if (!canSend) {
+        res.status(429).json({
+          error: 'Too many messages. Please try again later.',
+          retryAfter: 600
+        });
+        return;
+      }
+
       // Send message and get response
 
       if (!conversation_id || !message) {
@@ -126,7 +135,7 @@ router.post('/', async (req: Request, res: Response) => {
       }
 
       // Record rate limit event
-      await recordRateLimitEvent('chat', ipHash);
+      await recordRateLimitEvent('chat_message', ipHash);
 
       // Save visitor message
       const visitorMessage = await prisma.chatMessage.create({

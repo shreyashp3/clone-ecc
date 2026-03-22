@@ -30,9 +30,9 @@ server/
         └── admin.ts            ✅ Admin CRUD operations for all CMS content
 ```
 
-### Frontend API Client (`/src/integrations/api/`)
+### Frontend API Client (`/enterprise-essence-hub/src/integrations/api/`)
 ```
-src/integrations/api/
+enterprise-essence-hub/src/integrations/api/
 └── client.ts                   ✅ REST API client (replaces Supabase SDK)
 ```
 

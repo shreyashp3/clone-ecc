@@ -389,7 +389,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| src/integrations/api/client.ts | 560+ | REST API client |
+| enterprise-essence-hub/src/integrations/api/client.ts | 560+ | REST API client |
 | src/lib/submitLead.ts | Updated | Form submission |
 | src/hooks/useAuth.tsx | 140+ | Auth hook integration |
 
