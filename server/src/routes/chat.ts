@@ -49,6 +49,125 @@ async function recordRateLimitEvent(bucket: string, key: string): Promise<void> 
   });
 }
 
+const normalizeText = (text: string) => text.toLowerCase();
+const containsAny = (text: string, keywords: string[]) => keywords.some((k) => text.includes(k));
+const truncate = (text: string, max = 140) => {
+  if (!text) return '';
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1).trimEnd()}...`;
+};
+
+async function buildAssistantReply(message: string) {
+  const text = normalizeText(message || '');
+  const wantsProducts = containsAny(text, ['product', 'platform', 'saas', 'ai cloud insights', 'gpu', 'ticketly']);
+  const wantsServices = containsAny(text, ['service', 'consulting', 'aws', 'azure', 'devops', 'managed', 'cloud']);
+  const wantsPricing = containsAny(text, ['price', 'pricing', 'cost', 'budget', 'quote']);
+  const wantsDemo = containsAny(text, ['demo', 'meeting', 'call', 'schedule']);
+  const wantsCaseStudies = containsAny(text, ['case study', 'case studies', 'success story', 'client story']);
+  const wantsCareers = containsAny(text, ['career', 'job', 'hiring', 'apply', 'opening']);
+  const wantsSupport = containsAny(text, ['support', 'help', 'issue', 'ticket']);
+
+  const fallbackOverview = !wantsProducts && !wantsServices && !wantsPricing && !wantsDemo && !wantsCaseStudies && !wantsCareers && !wantsSupport;
+  const sections: string[] = [];
+
+  if (wantsProducts || fallbackOverview) {
+    const products = await prisma.product.findMany({
+      where: { isPublished: true },
+      orderBy: { sortOrder: 'asc' }
+    });
+
+    if (products.length > 0) {
+      const productLines = products.slice(0, 3).map((p) => {
+        const summary = truncate(p.description || p.tagline || '');
+        const link = p.externalUrl ? ` (${p.externalUrl})` : '';
+        return `- **${p.name}** - ${summary}${link}`;
+      });
+      sections.push(['**Products we offer:**', ...productLines].join('\n'));
+    }
+  }
+
+  if (wantsServices || fallbackOverview) {
+    const services = await prisma.service.findMany({
+      where: { isPublished: true },
+      orderBy: { sortOrder: 'asc' }
+    });
+
+    if (services.length > 0) {
+      const grouped = new Map<string, { title: string; description: string }[]>();
+      services.forEach((s) => {
+        const bucket = grouped.get(s.categoryName) || [];
+        bucket.push({ title: s.title, description: s.description || '' });
+        grouped.set(s.categoryName, bucket);
+      });
+
+      const serviceLines: string[] = [];
+      Array.from(grouped.entries()).slice(0, 3).forEach(([category, items]) => {
+        const sample = items[0];
+        const summary = truncate(sample?.description || '');
+        serviceLines.push(`- **${category}** - ${sample?.title}${summary ? `: ${summary}` : ''}`);
+      });
+
+      if (serviceLines.length > 0) {
+        sections.push(['**Services we deliver:**', ...serviceLines].join('\n'));
+      }
+    }
+  }
+
+  if (wantsCaseStudies) {
+    const caseStudies = await prisma.caseStudy.findMany({
+      where: { isPublished: true },
+      orderBy: { sortOrder: 'asc' },
+      take: 3
+    });
+    if (caseStudies.length > 0) {
+      const lines = caseStudies.map((c) => `- **${c.title}** - ${truncate(c.problem || c.solution || '')}`);
+      sections.push(['**Recent case studies:**', ...lines].join('\n'));
+    } else {
+      sections.push('We can share relevant case studies on request. Tell me your industry and goal.');
+    }
+  }
+
+  if (wantsCareers) {
+    const roles = await prisma.career.findMany({
+      where: { isPublished: true },
+      orderBy: { sortOrder: 'asc' },
+      take: 3
+    });
+    if (roles.length > 0) {
+      const lines = roles.map((r) => `- **${r.title}** - ${truncate(r.location || r.department || '')}`);
+      sections.push(['**Open roles:**', ...lines].join('\n'));
+    } else {
+      sections.push('We do not have open roles listed right now, but you can share your resume at info@ecctechnologies.ai.');
+    }
+  }
+
+  if (wantsPricing) {
+    sections.push('**Pricing:** We offer flexible pricing based on scope and usage. Share your requirements and timeline, and we can provide a tailored quote.');
+  }
+
+  if (wantsDemo) {
+    sections.push('**Demo:** We can schedule a product demo. Please share your preferred time and contact email.');
+  }
+
+  if (wantsSupport) {
+    sections.push('**Support:** If this is a support issue, please describe the problem and urgency. We can route it to the right team.');
+  }
+
+  if (sections.length === 0) {
+    sections.push('Tell me a bit about your goal (cost optimization, modernization, security, or AI/ML enablement), and I will recommend the best path.');
+  }
+
+  return sections.join('\n\n');
+}
+
+async function getLatestVisitorMessage(conversationId: string) {
+  const latest = await prisma.chatMessage.findFirst({
+    where: { conversationId, senderType: 'visitor' },
+    orderBy: { createdAt: 'desc' }
+  });
+  return latest?.content || '';
+}
+
 // POST /api/chat - Start or continue chat
 router.post('/', async (req: Request, res: Response) => {
   try {
@@ -146,12 +265,14 @@ router.post('/', async (req: Request, res: Response) => {
         }
       });
 
-      // Simple AI placeholder reply
+      const assistantContent = await buildAssistantReply(message);
+
+      // AI reply
       const replyMessage = await prisma.chatMessage.create({
         data: {
           conversationId: conversation_id,
           senderType: 'ai',
-          content: 'Thanks for your message! Our team will respond soon.'
+          content: assistantContent
         }
       });
 
@@ -280,11 +401,14 @@ router.post('/ai-reply', async (req: Request, res: Response) => {
       return;
     }
 
+    const lastMessage = await getLatestVisitorMessage(conversationId);
+    const assistantContent = await buildAssistantReply(lastMessage);
+
     const reply = await prisma.chatMessage.create({
       data: {
         conversationId,
         senderType: 'ai',
-        content: 'Thanks for the update. Our team will follow up shortly.'
+        content: assistantContent
       }
     });
 
