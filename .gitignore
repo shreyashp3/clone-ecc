@@ -26,6 +26,9 @@ server/uploads/*
 # Local caches
 server/.npm-cache/
 
+# Local-only archives
+_local_only/
+
 # OS files
 .DS_Store
 Thumbs.db
